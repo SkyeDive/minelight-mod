@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "body-sharing",
+	"version": "${version}",
+	"name": "Minelight (Body Sharing)",
+	"description": "Possess your friends, discover the inconvenience of sharing a single body firsthand!",
+	"authors": [
+		"Ferrite"
+	],
+	"license": "WTFPL",
+	"icon": "assets/body-sharing/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"net.ferret.BodySharing"
+		],
+		"client": [
+			"net.ferret.BodySharingClient"
+		]
+	},
+	"mixins": [
+		"body-sharing.mixins.json",
+		{
+			"config": "body-sharing.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.17.3",
+		"minecraft": "~1.20.1",
+		"java": ">=17",
+		"fabric-api": "*"
+	}
+}
