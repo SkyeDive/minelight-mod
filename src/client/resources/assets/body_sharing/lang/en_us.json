@@ -1,3 +1,4 @@
 {
-	"key.minelight.stop_possess": "Stop possessing"
+	"key.minelight.stop_possess": "Stop possessing",
+	"key.minelight.get_gui": "Debug GUI"
 }

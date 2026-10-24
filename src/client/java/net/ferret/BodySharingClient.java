@@ -17,10 +17,20 @@ import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
 import javax.imageio.stream.MemoryCacheImageOutputStream;
 
+import org.joml.Matrix4f;
+import org.lwjgl.opengl.GL11C;
+
 import com.google.common.graph.ElementOrder.Type;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.platform.Window;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import com.mojang.blaze3d.vertex.BufferBuilder.RenderedBuffer;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 
@@ -38,6 +48,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.MenuScreens;
+import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -58,9 +69,19 @@ public class BodySharingClient implements ClientModInitializer {
 	public static KeyMapping stopPossession = new KeyMapping("key.minelight.stop_possess", com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM, com.mojang.blaze3d.platform.InputConstants.UNKNOWN.getValue(), KeyMapping.CATEGORY_MULTIPLAYER);
 	public static KeyMapping getGUI = new KeyMapping("key.minelight.get_gui", com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM, com.mojang.blaze3d.platform.InputConstants.UNKNOWN.getValue(), KeyMapping.CATEGORY_INVENTORY);
 	public static ArrayList<KeyMapping> guiKeys = new ArrayList<>();
+	public static TextureTarget guiTarget;
+	public static RenderBuffers renderBuffers = new RenderBuffers();
 	
 	public void onInitializeClient() {
 		// This entrypoint is suitable for setting up client-specific logic, such as rendering.
+		
+		Minecraft.getInstance().execute(() -> {
+			Minecraft mc = Minecraft.getInstance();
+			guiTarget = new TextureTarget(
+				mc.getMainRenderTarget().width,
+				mc.getMainRenderTarget().height,
+				true, Minecraft.ON_OSX);
+		});
 		
 		// Possessor copycat GUI
 		MenuScreens.register(BodySharing.VESSEL_SCREEN_MENU, VesselScreen::new);
@@ -89,13 +110,95 @@ public class BodySharingClient implements ClientModInitializer {
 		ClientTickEvents.START_CLIENT_TICK.register((minecraftClient) -> {
 			// Debug hotkey for testing GUI code
 			if (getGUI.consumeClick()) {
-				GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, minecraftClient.renderBuffers().bufferSource());
-				float weirdGuiNumber = minecraftClient.getFrameTime();
-				minecraftClient.gui.render(guiGraphics, weirdGuiNumber);
-				BufferBuilder bb = ((BufferBuilder)guiGraphics.bufferSource().getBuffer(RenderType.gui()));
-				RenderedBuffer rb = bb.end();
-				// TODO figure out how to extract the buffer data from guiGraphics to append into the spirit's screen
-				BodySharing.LOGGER.info("Rendered GUI into buffer");
+				RenderSystem.recordRenderCall(() -> {
+					// change render target
+					// always resize rendering target to ensure correct size
+					Window window = minecraftClient.getWindow();
+					guiTarget.resize(window.getWidth(), window.getHeight(), Minecraft.ON_OSX);
+					// rebind targets
+					RenderTarget mrt = minecraftClient.getMainRenderTarget();
+					mrt.unbindWrite();
+					guiTarget.bindWrite(false);
+					
+					// set up pose et al for screen translation
+					Matrix4f matrix4f = new Matrix4f()
+						.setOrtho(0.0F, (float)(window.getWidth() / window.getGuiScale()), (float)(window.getHeight() / window.getGuiScale()), 0.0F, 1000.0F, 21000.0F);
+					RenderSystem.setProjectionMatrix(matrix4f, VertexSorting.ORTHOGRAPHIC_Z);
+					PoseStack poseStack = RenderSystem.getModelViewStack();
+					poseStack.pushPose();
+					poseStack.setIdentity();
+					poseStack.translate(0.0F, 0.0F, -11000.0F);
+					RenderSystem.applyModelViewMatrix();
+					Lighting.setupFor3DItems();
+					
+					// render
+					int guiMX = (int)(minecraftClient.mouseHandler.xpos() * minecraftClient.getWindow().getGuiScaledWidth() / minecraftClient.getWindow().getScreenWidth());
+					int guiMY = (int)(minecraftClient.mouseHandler.ypos() * minecraftClient.getWindow().getGuiScaledHeight() / minecraftClient.getWindow().getScreenHeight());
+					GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, renderBuffers.bufferSource());
+					RenderSystem.clear(GL11C.GL_COLOR_BUFFER_BIT | GL11C.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
+					minecraftClient.screen.renderWithTooltip(guiGraphics, guiMX, guiMY, minecraftClient.getDeltaFrameTime());
+					
+					// cleanup
+					guiGraphics.flush();
+					poseStack.popPose();
+					RenderSystem.applyModelViewMatrix();
+					// screenshot
+					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
+						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
+					
+					// old code that mistakenly rendered most other HUD elements
+					/*
+					Window window = minecraftClient.getWindow();
+					RenderTarget mrt = minecraftClient.getMainRenderTarget();
+					mrt.unbindWrite();
+					guiTarget.resize(window.getWidth(), window.getHeight(), Minecraft.ON_OSX);
+					guiTarget.bindWrite(false);
+					RenderSystem.viewport(0, 0, minecraftClient.getWindow().getWidth(), minecraftClient.getWindow().getHeight());
+					RenderSystem.clear(256, Minecraft.ON_OSX);
+					Matrix4f matrix4f = new Matrix4f()
+						.setOrtho(0.0F, (float)(window.getWidth() / window.getGuiScale()), (float)(window.getHeight() / window.getGuiScale()), 0.0F, 1000.0F, 21000.0F);
+					RenderSystem.setProjectionMatrix(matrix4f, VertexSorting.ORTHOGRAPHIC_Z);
+					PoseStack poseStack = RenderSystem.getModelViewStack();
+					poseStack.pushPose();
+					poseStack.setIdentity();
+					poseStack.translate(0.0F, 0.0F, -11000.0F);
+					RenderSystem.applyModelViewMatrix();
+					Lighting.setupFor3DItems();
+					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
+						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
+					//GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, minecraftClient.renderBuffers().bufferSource());
+					GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, renderBuffers.bufferSource());
+					float weirdGuiNumber = minecraftClient.getFrameTime();
+					guiGraphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+					RenderSystem.defaultBlendFunc();
+					RenderSystem.disableBlend();
+					RenderSystem.depthMask(true);
+					RenderSystem.enableDepthTest();
+					minecraftClient.gui.render(guiGraphics, weirdGuiNumber);
+					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
+						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
+					RenderSystem.clear(256, Minecraft.ON_OSX);
+					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
+						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
+					BufferBuilder bb = ((BufferBuilder)guiGraphics.bufferSource().getBuffer(RenderType.gui()));
+					RenderedBuffer rb = bb.end();
+					//rb.drawState().format();
+					guiGraphics.flush();
+					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
+						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
+					poseStack.popPose();
+					RenderSystem.applyModelViewMatrix();
+					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
+						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
+					guiTarget.unbindWrite();
+					mrt.bindWrite(Minecraft.ON_OSX);
+					//NativeImage guiImage = Screenshot.takeScreenshot(guiTarget);
+					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
+						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
+					*/
+					// TODO figure out how to extract the buffer data from guiGraphics to append into the spirit's screen
+					BodySharing.LOGGER.info("Rendered GUI into buffer");
+				});
 			}
 			
 			if (minecraftClient.isRunning() && minecraftClient.getCurrentServer() != null) {
