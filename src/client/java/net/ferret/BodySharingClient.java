@@ -135,6 +135,7 @@ public class BodySharingClient implements ClientModInitializer {
 					int guiMX = (int)(minecraftClient.mouseHandler.xpos() * minecraftClient.getWindow().getGuiScaledWidth() / minecraftClient.getWindow().getScreenWidth());
 					int guiMY = (int)(minecraftClient.mouseHandler.ypos() * minecraftClient.getWindow().getGuiScaledHeight() / minecraftClient.getWindow().getScreenHeight());
 					GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, renderBuffers.bufferSource());
+					RenderSystem.clearColor(0.0f, 0.0f, 0.0f, 0.0f);
 					RenderSystem.clear(GL11C.GL_COLOR_BUFFER_BIT | GL11C.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
 					minecraftClient.screen.renderWithTooltip(guiGraphics, guiMX, guiMY, minecraftClient.getDeltaFrameTime());
 					
@@ -143,7 +144,7 @@ public class BodySharingClient implements ClientModInitializer {
 					poseStack.popPose();
 					RenderSystem.applyModelViewMatrix();
 					// screenshot
-					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
+					TransparentScreenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
 						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
 					
 					// old code that mistakenly rendered most other HUD elements
