@@ -17,6 +17,7 @@ import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
 import javax.imageio.stream.MemoryCacheImageOutputStream;
 
+import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11C;
 
@@ -60,7 +61,7 @@ public class BodySharingClient implements ClientModInitializer {
 	public static HashMap<Integer, Boolean> selfKeyRecord = new HashMap<>();
 	public static ArrayList<Integer> selfUpdatedKeys = new ArrayList<>();
 	public static boolean isPossessing = false;
-	public static UUID possessing = null;
+	public static @Nullable UUID possessing = null;
 	public static boolean isHosting = false;
 	public static int streamWidth = 848;
 	public static int streamHeight = 480;
@@ -71,6 +72,8 @@ public class BodySharingClient implements ClientModInitializer {
 	public static ArrayList<KeyMapping> guiKeys = new ArrayList<>();
 	public static TextureTarget guiTarget;
 	public static RenderBuffers renderBuffers = new RenderBuffers();
+	public static @Nullable NativeImage guiFrameLast = null;
+	public static @Nullable NativeImage guiFrame = null;
 	
 	public void onInitializeClient() {
 		// This entrypoint is suitable for setting up client-specific logic, such as rendering.
@@ -111,92 +114,7 @@ public class BodySharingClient implements ClientModInitializer {
 			// Debug hotkey for testing GUI code
 			if (getGUI.consumeClick()) {
 				RenderSystem.recordRenderCall(() -> {
-					// change render target
-					// always resize rendering target to ensure correct size
-					Window window = minecraftClient.getWindow();
-					guiTarget.resize(window.getWidth(), window.getHeight(), Minecraft.ON_OSX);
-					// rebind targets
-					RenderTarget mrt = minecraftClient.getMainRenderTarget();
-					mrt.unbindWrite();
-					guiTarget.bindWrite(false);
-					
-					// set up pose et al for screen translation
-					Matrix4f matrix4f = new Matrix4f()
-						.setOrtho(0.0F, (float)(window.getWidth() / window.getGuiScale()), (float)(window.getHeight() / window.getGuiScale()), 0.0F, 1000.0F, 21000.0F);
-					RenderSystem.setProjectionMatrix(matrix4f, VertexSorting.ORTHOGRAPHIC_Z);
-					PoseStack poseStack = RenderSystem.getModelViewStack();
-					poseStack.pushPose();
-					poseStack.setIdentity();
-					poseStack.translate(0.0F, 0.0F, -11000.0F);
-					RenderSystem.applyModelViewMatrix();
-					Lighting.setupFor3DItems();
-					
-					// render
-					int guiMX = (int)(minecraftClient.mouseHandler.xpos() * minecraftClient.getWindow().getGuiScaledWidth() / minecraftClient.getWindow().getScreenWidth());
-					int guiMY = (int)(minecraftClient.mouseHandler.ypos() * minecraftClient.getWindow().getGuiScaledHeight() / minecraftClient.getWindow().getScreenHeight());
-					GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, renderBuffers.bufferSource());
-					RenderSystem.clearColor(0.0f, 0.0f, 0.0f, 0.0f);
-					RenderSystem.clear(GL11C.GL_COLOR_BUFFER_BIT | GL11C.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
-					minecraftClient.screen.renderWithTooltip(guiGraphics, guiMX, guiMY, minecraftClient.getDeltaFrameTime());
-					
-					// cleanup
-					guiGraphics.flush();
-					poseStack.popPose();
-					RenderSystem.applyModelViewMatrix();
-					// screenshot
-					TransparentScreenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
-						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
-					
-					// old code that mistakenly rendered most other HUD elements
-					/*
-					Window window = minecraftClient.getWindow();
-					RenderTarget mrt = minecraftClient.getMainRenderTarget();
-					mrt.unbindWrite();
-					guiTarget.resize(window.getWidth(), window.getHeight(), Minecraft.ON_OSX);
-					guiTarget.bindWrite(false);
-					RenderSystem.viewport(0, 0, minecraftClient.getWindow().getWidth(), minecraftClient.getWindow().getHeight());
-					RenderSystem.clear(256, Minecraft.ON_OSX);
-					Matrix4f matrix4f = new Matrix4f()
-						.setOrtho(0.0F, (float)(window.getWidth() / window.getGuiScale()), (float)(window.getHeight() / window.getGuiScale()), 0.0F, 1000.0F, 21000.0F);
-					RenderSystem.setProjectionMatrix(matrix4f, VertexSorting.ORTHOGRAPHIC_Z);
-					PoseStack poseStack = RenderSystem.getModelViewStack();
-					poseStack.pushPose();
-					poseStack.setIdentity();
-					poseStack.translate(0.0F, 0.0F, -11000.0F);
-					RenderSystem.applyModelViewMatrix();
-					Lighting.setupFor3DItems();
-					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
-						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
-					//GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, minecraftClient.renderBuffers().bufferSource());
-					GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, renderBuffers.bufferSource());
-					float weirdGuiNumber = minecraftClient.getFrameTime();
-					guiGraphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
-					RenderSystem.defaultBlendFunc();
-					RenderSystem.disableBlend();
-					RenderSystem.depthMask(true);
-					RenderSystem.enableDepthTest();
-					minecraftClient.gui.render(guiGraphics, weirdGuiNumber);
-					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
-						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
-					RenderSystem.clear(256, Minecraft.ON_OSX);
-					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
-						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
-					BufferBuilder bb = ((BufferBuilder)guiGraphics.bufferSource().getBuffer(RenderType.gui()));
-					RenderedBuffer rb = bb.end();
-					//rb.drawState().format();
-					guiGraphics.flush();
-					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
-						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
-					poseStack.popPose();
-					RenderSystem.applyModelViewMatrix();
-					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
-						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
-					guiTarget.unbindWrite();
-					mrt.bindWrite(Minecraft.ON_OSX);
-					//NativeImage guiImage = Screenshot.takeScreenshot(guiTarget);
-					Screenshot.grab(minecraftClient.gameDirectory, guiTarget, component ->
-						minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
-					*/
+					renderGUI();
 					// TODO figure out how to extract the buffer data from guiGraphics to append into the spirit's screen
 					BodySharing.LOGGER.info("Rendered GUI into buffer");
 				});
@@ -419,6 +337,100 @@ public class BodySharingClient implements ClientModInitializer {
 		possessing = null;
 		// client sends packet POSSESSING_UPDATE
 		ClientPlayNetworking.send(BodySharing.POSSESSING_UPDATE_ID, startPossessPacket);
+	}
+	
+	// Try to re-render the currently-opened GUI; update client fields on success
+	public static boolean renderGUI() {
+		Minecraft minecraftClient = Minecraft.getInstance();
+		if (minecraftClient.screen == null)
+			return false;
+		
+		// change render target
+		// always resize rendering target to ensure correct size
+		Window window = minecraftClient.getWindow();
+		guiTarget.resize(window.getWidth(), window.getHeight(), Minecraft.ON_OSX);
+		// rebind targets
+		RenderTarget mrt = minecraftClient.getMainRenderTarget();
+		mrt.unbindWrite();
+		guiTarget.bindWrite(false);
+		
+		// set up pose et al for screen translation
+		Matrix4f matrix4f = new Matrix4f()
+			.setOrtho(0.0F, (float)(window.getWidth() / window.getGuiScale()), (float)(window.getHeight() / window.getGuiScale()), 0.0F, 1000.0F, 21000.0F);
+		RenderSystem.setProjectionMatrix(matrix4f, VertexSorting.ORTHOGRAPHIC_Z);
+		PoseStack poseStack = RenderSystem.getModelViewStack();
+		poseStack.pushPose();
+		poseStack.setIdentity();
+		poseStack.translate(0.0F, 0.0F, -11000.0F);
+		RenderSystem.applyModelViewMatrix();
+		Lighting.setupFor3DItems();
+		
+		// render
+		int guiMX = (int)(minecraftClient.mouseHandler.xpos() * minecraftClient.getWindow().getGuiScaledWidth() / minecraftClient.getWindow().getScreenWidth());
+		int guiMY = (int)(minecraftClient.mouseHandler.ypos() * minecraftClient.getWindow().getGuiScaledHeight() / minecraftClient.getWindow().getScreenHeight());
+		GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, renderBuffers.bufferSource());
+		RenderSystem.clearColor(0.0f, 0.0f, 0.0f, 0.0f);
+		RenderSystem.clear(GL11C.GL_COLOR_BUFFER_BIT | GL11C.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
+		minecraftClient.screen.renderWithTooltip(guiGraphics, guiMX, guiMY, minecraftClient.getDeltaFrameTime());
+		
+		// cleanup
+		guiGraphics.flush();
+		poseStack.popPose();
+		RenderSystem.applyModelViewMatrix();
+		guiTarget.unbindWrite();
+		mrt.bindWrite(Minecraft.ON_OSX);
+		// screenshot
+		NativeImage screenshot = TransparentScreenshot.takeScreenshot(guiTarget);
+		BodySharingClient.guiFrameLast = BodySharingClient.guiFrame;
+		BodySharingClient.guiFrame = screenshot;
+		return true;
+	}
+	
+	public static @Nullable NativeImage renderHUD() {
+		Minecraft minecraftClient = Minecraft.getInstance();
+		if (minecraftClient.gui == null)
+			return null;
+		
+		// change render target
+		// always resize rendering target to ensure correct size
+		Window window = minecraftClient.getWindow();
+		guiTarget.resize(window.getWidth(), window.getHeight(), Minecraft.ON_OSX);
+		// rebind targets
+		RenderTarget mrt = minecraftClient.getMainRenderTarget();
+		mrt.unbindWrite();
+		guiTarget.bindWrite(false);
+		
+		// set up pose et al for screen translation
+		Matrix4f matrix4f = new Matrix4f()
+			.setOrtho(0.0F, (float)(window.getWidth() / window.getGuiScale()), (float)(window.getHeight() / window.getGuiScale()), 0.0F, 1000.0F, 21000.0F);
+		RenderSystem.setProjectionMatrix(matrix4f, VertexSorting.ORTHOGRAPHIC_Z);
+		PoseStack poseStack = RenderSystem.getModelViewStack();
+		poseStack.pushPose();
+		poseStack.setIdentity();
+		poseStack.translate(0.0F, 0.0F, -11000.0F);
+		RenderSystem.applyModelViewMatrix();
+		Lighting.setupFor3DItems();
+
+		// render
+		GuiGraphics guiGraphics = new GuiGraphics(minecraftClient, renderBuffers.bufferSource());
+		RenderSystem.defaultBlendFunc();
+		RenderSystem.disableBlend();
+		RenderSystem.depthMask(true);
+		RenderSystem.enableDepthTest();
+		RenderSystem.clearColor(0.0f, 0.0f, 0.0f, 0.0f);
+		RenderSystem.clear(GL11C.GL_COLOR_BUFFER_BIT | GL11C.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
+		// doesn't keep transparency--probably because of a RenderSystem call in here
+		minecraftClient.gui.render(guiGraphics, minecraftClient.getFrameTime());
+		
+		// cleanup
+		guiGraphics.flush();
+		poseStack.popPose();
+		RenderSystem.applyModelViewMatrix();
+		guiTarget.unbindWrite();
+		mrt.bindWrite(Minecraft.ON_OSX);
+		// screenshot
+		NativeImage screenshot = TransparentScreenshot.takeScreenshot(guiTarget);
+		return screenshot;
 	}
 	
 	// Old code for image format conversion--unused but kept as a PoC in case it's needed again
