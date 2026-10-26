@@ -10,7 +10,7 @@ Outline of future plans
 * Create GUI-data extractor
   1. ✅ Establish method to render the current GUI to a separate rendering target
   2. ✅ Preserve or simulate transparency of GUI rendering target
-  3. Add backbuffer and per-frame change-detection
+  3. ✅ Add backbuffer and per-frame change-detection
   4. Create mixin for receiving and rendering GUI data
   5. Create mixin for extracting and sending GUI data each tick
 * Add event bouncers for GUI data

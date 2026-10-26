@@ -42,6 +42,10 @@ public class TransparentScreenshot extends Screenshot {
 	
 	private static void _grab(File file, @Nullable String string, RenderTarget renderTarget, Consumer<Component> consumer) {
 		NativeImage nativeImage = takeScreenshot(renderTarget);
+		_grab(file, string, nativeImage, consumer);
+	}
+	
+	public static void _grab(File file, @Nullable String string, NativeImage nativeImage, Consumer<Component> consumer) {
 		File file2 = new File(file, "screenshots");
 		file2.mkdir();
 		File file3;

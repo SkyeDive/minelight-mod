@@ -115,6 +115,22 @@ public class BodySharingClient implements ClientModInitializer {
 			if (getGUI.consumeClick()) {
 				RenderSystem.recordRenderCall(() -> {
 					renderGUI();
+					if (guiFrameLast != null) {
+						NativeImageHandler.Bounds bounds = NativeImageHandler.getChangedRect(guiFrameLast, guiFrame);
+						if (bounds != null) {
+							NativeImage changed = NativeImageHandler.crop(guiFrame, bounds);
+							if (changed != null) {
+								TransparentScreenshot._grab(minecraftClient.gameDirectory, null, changed, component ->
+									minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
+							} else {
+								BodySharing.LOGGER.info("Unable to crop");
+							}
+						} else {
+							BodySharing.LOGGER.info("Bounds are null");
+						}
+					} else {
+						BodySharing.LOGGER.info("No last frame");
+					}
 					// TODO figure out how to extract the buffer data from guiGraphics to append into the spirit's screen
 					BodySharing.LOGGER.info("Rendered GUI into buffer");
 				});
