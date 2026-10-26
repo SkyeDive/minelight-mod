@@ -11,13 +11,12 @@ Outline of future plans
   1. ✅ Establish method to render the current GUI to a separate rendering target
   2. ✅ Preserve or simulate transparency of GUI rendering target
   3. ✅ Add backbuffer and per-frame change-detection
-  4. Create mixin for receiving and rendering GUI data
-  5. Create mixin for extracting and sending GUI data each tick
-* Add event bouncers for GUI data
-* Add clientside handling for GUI data to render it as expected
-* Store gamemode of possessors alongside inventory
+  4. Add event bouncers for GUI data
+  5. Create mixin for receiving and rendering GUI data
+  6. Create mixin for extracting and sending GUI data each tick
 * Add handling for players disconnecting
-* Sync hotbar, health, hunger, armor, oxygen, experience data between clients for HUD rendering
+* Sync hotbar HUD info between clients for HUD rendering
+* Store gamemode and HUD data of possessors alongside inventory
 
 ## Polish
 * Add commands to allow changing possessor/vessel status of other players
