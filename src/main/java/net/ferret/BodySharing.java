@@ -24,6 +24,7 @@ import net.minecraft.world.level.GameType;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -81,7 +82,8 @@ public class BodySharing implements ModInitializer {
     // Sent by vessel to render their GUI screen onto possessors' screens
     // Bounced by server to possessors
     // executes once per tick, for bandwidth and because GUIs shouldn't need many updates
-    	// TODO fields go here
+    	// int x, y, w, h
+    	// int[] pixels
     		// CLIENT SENDER	TBD
 			// CLIENT RECEIVER	TBD
     		// SERVER SENDER	TBD
@@ -288,6 +290,30 @@ public class BodySharing implements ModInitializer {
 				}
 			} else {
 				LOGGER.error("update_keys packet: server not running");
+			}
+		});
+		
+		// server receives packet VESSEL_SCREEN
+		// bounce GUI-screen updates from the sender to anyone possessing them
+		ServerPlayNetworking.registerGlobalReceiver(VESSEL_SCREEN_ID, (minecraftServer, sendingPlayer, serverPacketListener, buffer, responseSender) -> {
+			if (minecraftServer.isRunning()) {
+				UUID vessel = sendingPlayer.getUUID();
+				if (isHosting(vessel)) {
+					List<UUID> spirits = getPossessors(vessel);
+					FriendlyByteBuf buf2 = PacketByteBufs.create();
+					// x, y, w, h
+					buf2.writeInt(buffer.readInt());
+					buf2.writeInt(buffer.readInt());
+					buf2.writeInt(buffer.readInt());
+					buf2.writeInt(buffer.readInt());
+					// pixels
+					buf2.writeVarIntArray(buffer.readVarIntArray());
+					for (UUID spirit : spirits) {
+						ServerPlayNetworking.send(minecraftServer.getPlayerList().getPlayer(spirit), VESSEL_SCREEN_ID, buf2);
+					}
+				}
+			} else {
+				LOGGER.error("vessel_screen packet: server not running");
 			}
 		});
 		

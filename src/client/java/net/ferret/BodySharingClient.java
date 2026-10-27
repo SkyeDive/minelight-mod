@@ -72,8 +72,12 @@ public class BodySharingClient implements ClientModInitializer {
 	public static ArrayList<KeyMapping> guiKeys = new ArrayList<>();
 	public static TextureTarget guiTarget;
 	public static RenderBuffers renderBuffers = new RenderBuffers();
+	// used by vessels for sending screen update info to possessors
 	public static @Nullable NativeImage guiFrameLast = null;
 	public static @Nullable NativeImage guiFrame = null;
+	// used by spirits for receiving and rendering screens from vessels
+	public static @Nullable NativeImage vesselScreen = null; // in original size from vessel
+	public static @Nullable NativeImage resizedScreen = null; // scaled (not stretched) to possessor's screen size
 	
 	public void onInitializeClient() {
 		// This entrypoint is suitable for setting up client-specific logic, such as rendering.

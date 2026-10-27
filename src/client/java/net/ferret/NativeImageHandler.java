@@ -136,6 +136,32 @@ public class NativeImageHandler {
 		return cropped;
 	}
 	
+	/**
+	 * Constructs a new NativeImage from provided dimensions and arrayed pixels
+	 * @param w Image width in px
+	 * @param h Image height in px
+	 * @param pixels Flattened array of ints representing pixels. Length must match w*h
+	 * @return NativeImage object corresponding to arguments
+	 */
+	public static @Nullable NativeImage fromPixelArray(int w, int h, int[] pixels) {
+		// return null on invalid dimensions
+		if (w <= 0 || h <= 0)
+			return null;
+		// throw error on size mismatch
+		if (w*h != pixels.length)
+			throw new RuntimeException("Image dimensions (%d, %d) are invalid for pixel array size (%d)!"
+				.formatted(w, h, pixels.length));
+		
+		NativeImage image = new NativeImage(w, h, false);
+		for (int curY = 0; curY < h; curY++) {
+			for (int curX = 0; curX < w; curX++) {
+				int curIndex = curX + curY * w;
+				image.setPixelRGBA(curX, curY, pixels[curIndex]);
+			}
+		}
+		return image;
+	}
+	
 	public static boolean areBoundsValid (NativeImage image, @Nullable Bounds bounds) {
 		// never valid for invalid images
 		if (!isImageValid(image))
