@@ -116,6 +116,7 @@ public class NativeImageHandler {
 	
 	/**
 	 * Crops the image to the {@link Bounds} provided, returning a {@link NativeImage} object.
+	 * May return existing object. Result must be closed manually.
 	 * @param image Uncropped image
 	 * @param bounds Dimensions to crop to
 	 * @return Cropped image
@@ -137,7 +138,8 @@ public class NativeImageHandler {
 	}
 	
 	/**
-	 * Constructs a new NativeImage from provided dimensions and arrayed pixels
+	 * Constructs a new NativeImage from provided dimensions and arrayed pixels.
+	 * Result must be closed manually.
 	 * @param w Image width in px
 	 * @param h Image height in px
 	 * @param pixels Flattened array of ints representing pixels. Length must match w*h

@@ -7,6 +7,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import com.mojang.blaze3d.platform.Window;
+
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.ferret.BodySharing;
@@ -25,9 +27,10 @@ public abstract class MouseReaderMixin {
 	@Inject(method = "onMove", at = @At("HEAD"), cancellable = true)
 	public void interceptOnMove(long window, double d, double e, CallbackInfo ci) {
 		if (BodySharingClient.isPossessing && minecraft.isRunning() && minecraft.getCurrentServer() != null) {
+			Window w = Minecraft.getInstance().getWindow();
 			FriendlyByteBuf packet = PacketByteBufs.create();
-			packet.writeDouble(d);
-			packet.writeDouble(e);
+			packet.writeDouble(d / w.getWidth());
+			packet.writeDouble(e / w.getHeight());
 			ClientPlayNetworking.send(BodySharing.MOUSE_MOVE_ID, packet);
 			ci.cancel();
 		}

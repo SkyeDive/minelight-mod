@@ -65,9 +65,6 @@ public class BodySharing implements ModInitializer {
     			// REPLY NO				DONE
     			// VESSEL DISCONNECT	TBD
     		// SERVER RECEIVER	WIP
-    		// TODO SERVER REMOVES VESSELHOOD AND POSSESSORHOOD OF CLIENTS WHEN CLIENTS DISCONNECT
-    		// TODO CLIENTS CLOSE CURRENT SCREEN(S) WHEN RECEIVING SERVER RESPONSE
-    		// TODO SERVER RETURNS POSSESSOR GAMEMODE FROM SPECTATOR
     public static final ResourceLocation POSSESSING_UPDATE_ID = new ResourceLocation(MOD_ID, "possessing_update");
     
     // Sent by server to update on current hosting status
@@ -78,10 +75,11 @@ public class BodySharing implements ModInitializer {
     			// START HOST	DONE
     public static final ResourceLocation VESSEL_UPDATE_ID = new ResourceLocation(MOD_ID, "vessel_update");
     
-    // TODO in need of redesign
     // Sent by vessel to render their GUI screen onto possessors' screens
     // Bounced by server to possessors
     // executes once per tick, for bandwidth and because GUIs shouldn't need many updates
+    	// boolean isReplacing
+    	// double guiScale
     	// int x, y, w, h
     	// int[] pixels
     		// CLIENT SENDER	TBD
@@ -297,18 +295,46 @@ public class BodySharing implements ModInitializer {
 		// bounce GUI-screen updates from the sender to anyone possessing them
 		ServerPlayNetworking.registerGlobalReceiver(VESSEL_SCREEN_ID, (minecraftServer, sendingPlayer, serverPacketListener, buffer, responseSender) -> {
 			if (minecraftServer.isRunning()) {
+				// signal menu open
+				// signal menu close
 				UUID vessel = sendingPlayer.getUUID();
 				if (isHosting(vessel)) {
 					List<UUID> spirits = getPossessors(vessel);
 					FriendlyByteBuf buf2 = PacketByteBufs.create();
-					// x, y, w, h
-					buf2.writeInt(buffer.readInt());
-					buf2.writeInt(buffer.readInt());
-					buf2.writeInt(buffer.readInt());
-					buf2.writeInt(buffer.readInt());
-					// pixels
-					buf2.writeVarIntArray(buffer.readVarIntArray());
+					
+					// read packet info
+					boolean isReplacing = buffer.readBoolean();
+					int x = buffer.readInt();
+					int y = buffer.readInt();
+					int w = buffer.readInt();
+					int h = buffer.readInt();
+					int[] pixels = buffer.readVarIntArray();
+					
+					// close menu on special signal
+					boolean closing = false;
+					if (isReplacing && x == 0 && y == 0 && w == 0 && h == 0)
+						closing = true;
+					
+					// copy packet info
+					buf2.writeBoolean(isReplacing);
+					buf2.writeInt(x);
+					buf2.writeInt(y);
+					buf2.writeInt(w);
+					buf2.writeInt(h);
+					buf2.writeVarIntArray(pixels);
+					
 					for (UUID spirit : spirits) {
+						ServerPlayer spiritPlayer = minecraftServer.getPlayerList().getPlayer(spirit);
+						if (closing)
+							spiritPlayer.closeContainer();
+						else if (!(spiritPlayer.containerMenu instanceof VesselScreenMenu)) {
+							// open menu if possessor doesn't have it open
+							spiritPlayer.openMenu(VSM_PROVIDER);
+							// and send another VESSEL_UPDATE to notify that the whole screen should be redrawn, just in case
+							FriendlyByteBuf vu = PacketByteBufs.create();
+							vu.writeBoolean(true);
+							ServerPlayNetworking.send(sendingPlayer, VESSEL_UPDATE_ID, vu);
+						}
 						ServerPlayNetworking.send(minecraftServer.getPlayerList().getPlayer(spirit), VESSEL_SCREEN_ID, buf2);
 					}
 				}
@@ -521,14 +547,12 @@ public class BodySharing implements ModInitializer {
 					spiritUpdatePacket.writeBoolean(false);
 					spiritUpdatePacket.writeUUID(vessel);
 					
-					// notify vessel if newly hosting
+					// notify vessel
 					ServerPlayer vesselPlayer = minecraftServer.getPlayerList().getPlayer(vessel);
-					if (!isHosting(vessel)) {
-						FriendlyByteBuf vesselUpdatePacket = PacketByteBufs.create();
-						vesselUpdatePacket.writeBoolean(true);
-						// server sends packet VESSEL_UPDATE (start hosting)
-						ServerPlayNetworking.send(vesselPlayer, VESSEL_UPDATE_ID, vesselUpdatePacket);
-					}
+					FriendlyByteBuf vesselUpdatePacket = PacketByteBufs.create();
+					vesselUpdatePacket.writeBoolean(true);
+					// server sends packet VESSEL_UPDATE (start or continue hosting)
+					ServerPlayNetworking.send(vesselPlayer, VESSEL_UPDATE_ID, vesselUpdatePacket);
 					sendingPlayer.setGameMode(GameType.SPECTATOR);
 					sendingPlayer.setCamera(vesselPlayer);
 					

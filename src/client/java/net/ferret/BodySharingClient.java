@@ -1,27 +1,16 @@
 package net.ferret;
 
 import java.awt.Graphics;
-import java.awt.Image;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.UUID;
 
-import javax.imageio.IIOImage;
-import javax.imageio.ImageIO;
-import javax.imageio.ImageWriteParam;
-import javax.imageio.ImageWriter;
-import javax.imageio.stream.MemoryCacheImageOutputStream;
-
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11C;
 
-import com.google.common.graph.ElementOrder.Type;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -29,10 +18,8 @@ import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexSorting;
-import com.mojang.blaze3d.vertex.BufferBuilder.RenderedBuffer;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -46,15 +33,20 @@ import net.ferret.mixin.client.KeyboardHandlerAccess;
 import net.ferret.mixin.client.MouseHandlerAccess;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.DeathScreen;
 import net.minecraft.client.gui.screens.MenuScreens;
+import net.minecraft.client.gui.screens.inventory.AbstractCommandBlockEditScreen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.AbstractSignEditScreen;
+import net.minecraft.client.gui.screens.inventory.BookViewScreen;
+import net.minecraft.client.gui.screens.inventory.JigsawBlockEditScreen;
+import net.minecraft.client.gui.screens.inventory.StructureBlockEditScreen;
 import net.minecraft.client.renderer.RenderBuffers;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.player.Player;
 
 public class BodySharingClient implements ClientModInitializer {
 	public static HashMap<Integer, Boolean> possessorKeys = new HashMap<>();
@@ -67,17 +59,20 @@ public class BodySharingClient implements ClientModInitializer {
 	public static int streamHeight = 480;
 	public static BufferedImage renderBMP = new BufferedImage(streamWidth, streamHeight, BufferedImage.TYPE_3BYTE_BGR);
 	public static Graphics rbGraphics = renderBMP.createGraphics();
-	public static KeyMapping stopPossession = new KeyMapping("key.minelight.stop_possess", com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM, com.mojang.blaze3d.platform.InputConstants.UNKNOWN.getValue(), KeyMapping.CATEGORY_MULTIPLAYER);
+	public static KeyMapping stopPossession = new KeyMapping("key.minelight.stop_possess", com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM, com.mojang.blaze3d.platform.InputConstants.KEY_F12, KeyMapping.CATEGORY_MULTIPLAYER);
 	public static KeyMapping getGUI = new KeyMapping("key.minelight.get_gui", com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM, com.mojang.blaze3d.platform.InputConstants.UNKNOWN.getValue(), KeyMapping.CATEGORY_INVENTORY);
 	public static ArrayList<KeyMapping> guiKeys = new ArrayList<>();
 	public static TextureTarget guiTarget;
 	public static RenderBuffers renderBuffers = new RenderBuffers();
 	// used by vessels for sending screen update info to possessors
+	public static final Object guiFrameSync = new Object();
 	public static @Nullable NativeImage guiFrameLast = null;
 	public static @Nullable NativeImage guiFrame = null;
+	public static boolean sendFullScreen = true;
 	// used by spirits for receiving and rendering screens from vessels
+	public static final Object copycatScreenSync = new Object();
 	public static @Nullable NativeImage vesselScreen = null; // in original size from vessel
-	public static @Nullable NativeImage resizedScreen = null; // scaled (not stretched) to possessor's screen size
+	public static @Nullable NativeImage resizedScreen = null; // stretched to possessor's screen size
 	
 	public void onInitializeClient() {
 		// This entrypoint is suitable for setting up client-specific logic, such as rendering.
@@ -116,31 +111,9 @@ public class BodySharingClient implements ClientModInitializer {
 		// run every tick, clientside
 		ClientTickEvents.START_CLIENT_TICK.register((minecraftClient) -> {
 			// Debug hotkey for testing GUI code
-			if (getGUI.consumeClick()) {
-				RenderSystem.recordRenderCall(() -> {
-					renderGUI();
-					if (guiFrameLast != null) {
-						NativeImageHandler.Bounds bounds = NativeImageHandler.getChangedRect(guiFrameLast, guiFrame);
-						if (bounds != null) {
-							NativeImage changed = NativeImageHandler.crop(guiFrame, bounds);
-							if (changed != null) {
-								TransparentScreenshot._grab(minecraftClient.gameDirectory, null, changed, component ->
-									minecraftClient.execute(() -> minecraftClient.gui.getChat().addMessage(component)));
-							} else {
-								BodySharing.LOGGER.info("Unable to crop");
-							}
-						} else {
-							BodySharing.LOGGER.info("Bounds are null");
-						}
-					} else {
-						BodySharing.LOGGER.info("No last frame");
-					}
-					// TODO figure out how to extract the buffer data from guiGraphics to append into the spirit's screen
-					BodySharing.LOGGER.info("Rendered GUI into buffer");
-				});
-			}
+			if (getGUI.consumeClick()) {}
 			
-			if (minecraftClient.isRunning() && minecraftClient.getCurrentServer() != null) {
+			if (minecraftClient.isRunning() && (minecraftClient.getCurrentServer() != null || minecraftClient.hasSingleplayerServer())) {
 				// Hotkey to stop possessing
 				if (stopPossession.consumeClick()) {
 					if (isPossessing) {
@@ -150,73 +123,88 @@ public class BodySharingClient implements ClientModInitializer {
 					
 				// Vessel per-tick code
 				if (isHosting) {
-					// Old code for screen-capturing using screenshotting, unused but kept as a PoC if it's needed again
-					
-					/*
-					// First timing checkpoint
-					long c0 = System.currentTimeMillis();
-					// Screenshot into nonstandard format (AABBGGRR)
-					Minecraft clientGame = Minecraft.getInstance();
-					NativeImage renderImage = Screenshot.takeScreenshot(clientGame.getMainRenderTarget());
-					int[] renderPixelsRGBA = renderImage.getPixelsRGBA();
-					// instead of RrGgBbAa, stored as AaBbGgRr
-					BodySharing.LOGGER.info("Formatting screenshot");
-					isHosting = false;
-					
-					int[] nnPixelsRGBA = new int[streamWidth * streamHeight];
-					for (int pixelIndex = 0; pixelIndex < nnPixelsRGBA.length; pixelIndex++) {
-						// TODO copy nearest-neighbor style from renderPixelsRGBA into nnPixelsRGBA
-					}
-					long c1 = System.currentTimeMillis();
-					
-					// Arrange nonstandard image data into convertible BMP format
-					try {
-					long c2 = System.currentTimeMillis();
-						byte[] bmpBytes = screenshotToBitmap(nnPixelsRGBA, renderImage.getWidth());
-						if (bmpBytes == null)
-							throw new IOException("Screenshot was null!");
-						long c3 = System.currentTimeMillis();
-						BufferedImage bufferedBMP = ImageIO.read(new ByteArrayInputStream(bmpBytes));
-						long c4 = System.currentTimeMillis();
-						rbGraphics.drawImage(bufferedBMP, 0, 0, streamWidth, streamHeight, null);
-						long c5 = System.currentTimeMillis();
-						// Set up JPEG converter
-						ImageWriter jpegWriter = ImageIO.getImageWritersByFormatName("jpg").next();
-						ImageWriteParam jpegWriterParams = jpegWriter.getDefaultWriteParam();
-						// Set JPEG encoding parameters
-						jpegWriterParams.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-						jpegWriterParams.setCompressionQuality(0.9f);
-						// Create JPEG holder
-						ByteArrayOutputStream jpegBytes = new ByteArrayOutputStream();
-						MemoryCacheImageOutputStream mcios = new MemoryCacheImageOutputStream(jpegBytes);
-						jpegWriter.setOutput(mcios);
-						// Convert
-						jpegWriter.write(new IIOImage(renderBMP, null, null));
-						jpegWriter.dispose();
-						mcios.close();
-						long c6 = System.currentTimeMillis();
-						
-						BodySharing.LOGGER.info("Converted screenshot");
-						
-						// Save converted screenshot
-						//FileOutputStream saveSpot = new FileOutputStream("/tmp/sc.jpg");
-						//saveSpot.write(jpegBytes.toByteArray());
-						//saveSpot.close();
-						
-						// Print timing stats to chat
-						clientGame.execute(() -> clientGame.gui.getChat().addMessage(Component.literal(String.format(
-							"Timing stats: sc %d nn %d mkbmp %d parse %d resize %d jpeg %d",
-							(int)(c1-c0), (int)(c2-c1), (int)(c3-c2), (int)(c4-c3), (int)(c5-c4), (int)(c6-c5)
-						))));
-						// TODO client sends packet VESSEL_SCREEN
-						
-					} catch (IOException e) {
-						BodySharing.LOGGER.error(e.toString());
-					}
-					*/
+					RenderSystem.recordRenderCall(() -> {
+						synchronized (guiFrameSync) {
+							if (renderGUI()) {
+								if (sendFullScreen || guiFrameLast == null) {
+									sendFullScreen = false;
+									FriendlyByteBuf packet = PacketByteBufs.create();
+									// isReplacing
+									packet.writeBoolean(true);
+									// x, y, w, h
+									packet.writeInt(0);
+									packet.writeInt(0);
+									packet.writeInt(guiFrame.getWidth());
+									packet.writeInt(guiFrame.getHeight());
+									// pixels
+									packet.writeVarIntArray(guiFrame.getPixelsRGBA());
+									// client sends packet VESSEL_SCREEN
+									ClientPlayNetworking.send(BodySharing.VESSEL_SCREEN_ID, packet);
+								} else if (guiFrameLast != null) {
+									NativeImageHandler.Bounds bounds = NativeImageHandler.getChangedRect(guiFrameLast, guiFrame);
+									if (bounds != null) {
+										NativeImage changed = NativeImageHandler.crop(guiFrame, bounds);
+										if (changed != null) {
+											FriendlyByteBuf packet = PacketByteBufs.create();
+											// isReplacing
+											packet.writeBoolean(bounds.w == guiFrame.getWidth() && bounds.h == guiFrame.getHeight());
+											// x, y, w, h
+											packet.writeInt(bounds.x);
+											packet.writeInt(bounds.y);
+											packet.writeInt(bounds.w);
+											packet.writeInt(bounds.h);
+											// pixels
+											packet.writeVarIntArray(changed.getPixelsRGBA());
+											// client sends packet VESSEL_SCREEN
+											ClientPlayNetworking.send(BodySharing.VESSEL_SCREEN_ID, packet);
+											if (changed != guiFrame)
+												changed.close();
+										} else {
+											BodySharing.LOGGER.info("Unable to crop");
+										}
+									}
+								}
+							} else if (!isGUIOpen() && guiFrame != null) {
+								// gui has been closed; clean up gui frames
+								if (guiFrameLast != null)
+									guiFrameLast.close();
+								guiFrameLast = null;
+								guiFrame.close();
+								guiFrame = null;
+								
+								// Send packet to close container
+								FriendlyByteBuf packet = PacketByteBufs.create();
+								// isReplacing
+								packet.writeBoolean(true);
+								// x, y, w, h
+								packet.writeInt(0);
+								packet.writeInt(0);
+								packet.writeInt(0);
+								packet.writeInt(0);
+								// pixels
+								int[] pixels = {};
+								packet.writeVarIntArray(pixels);
+								// client sends packet VESSEL_SCREEN
+								ClientPlayNetworking.send(BodySharing.VESSEL_SCREEN_ID, packet);
+							}
+						}
+					});
 					
 				// Possessor per-tick code
 				} else if (isPossessing) {
+					// Clear copycat screen when the GUI is closed
+					synchronized (copycatScreenSync) {
+						if (vesselScreen != null && !isGUIOpen()) {
+							// Delete old copycat data
+							vesselScreen.close();
+							vesselScreen = null;
+							// Wipe resizedScreen, it will automatically reinstantiate later to transparent
+							if (resizedScreen != null)
+								resizedScreen.close();
+							resizedScreen = null;
+						}
+					}
+					
 					FriendlyByteBuf packet = PacketByteBufs.create();
 					// Encode held keys
 					// Stored in string as <int><boolean>;<int><boolean>
@@ -283,9 +271,10 @@ public class BodySharingClient implements ClientModInitializer {
 		// client receives packet MOUSE_MOVE
 		// Receive and process mouse movement events from this client's possessors
 		ClientPlayNetworking.registerGlobalReceiver(BodySharing.MOUSE_MOVE_ID, (minecraftClient, clientPacketListener, buffer, packetSender) -> {
-			long window = minecraftClient.getWindow().getWindow();
-			double d = buffer.readDouble();
-			double e = buffer.readDouble();
+			Window w = minecraftClient.getWindow();
+			long window = w.getWindow();
+			double d = buffer.readDouble() * w.getWidth();
+			double e = buffer.readDouble() * w.getHeight();
 			((MouseHandlerAccess)(minecraftClient.mouseHandler)).bodySharingOnMove(window, d, e);
 		});
 
@@ -319,6 +308,16 @@ public class BodySharingClient implements ClientModInitializer {
 				if (!isPossessing)
 					BodySharing.LOGGER.info("Beginning possessing");
 				possessing = vessel;
+
+				synchronized (copycatScreenSync) {
+					Window window = minecraftClient.getWindow();
+					if (vesselScreen != null)
+						vesselScreen.close();
+					vesselScreen = null;
+					if (resizedScreen != null)
+						resizedScreen.close();
+					resizedScreen = new NativeImage(window.getWidth(), window.getHeight(), false);
+				}
 			} else {
 				if (isPossessing)
 					BodySharing.LOGGER.info("Stopping possession");
@@ -333,15 +332,105 @@ public class BodySharingClient implements ClientModInitializer {
 		ClientPlayNetworking.registerGlobalReceiver(BodySharing.VESSEL_UPDATE_ID, (minecraftClient, clientPacketListener, buffer, packetSender) -> {
 			boolean isVessel = buffer.readBoolean();
 			if (!isVessel) {
-				if (isHosting)
+				if (isHosting) {
 					BodySharing.LOGGER.info("Stopping hosting");
+					
+					// clear guiFrame fields
+					synchronized (guiFrameSync) {
+						if (guiFrameLast != null)
+							guiFrameLast.close();
+						guiFrameLast = null;
+						if (guiFrame != null)
+							guiFrame.close();
+						guiFrame = null;
+					}
+				}
 				possessorKeys.clear();
 			} else {
-				if (!isHosting)
+				if (!isHosting) {
 					BodySharing.LOGGER.info("Beginning hosting");
+
+					// clear guiFrame fields
+					synchronized (guiFrameSync) {
+						if (guiFrameLast != null)
+							guiFrameLast.close();
+						guiFrameLast = null;
+						if (guiFrame != null)
+							guiFrame.close();
+						guiFrame = null;
+					}
+				} else
+					BodySharing.LOGGER.info("Resending full screen");
+				sendFullScreen = true;
 			}
 			isHosting = isVessel;
 		});
+		
+		// client receives packet VESSEL_SCREEN
+		// update this client's state of copycat gui
+		ClientPlayNetworking.registerGlobalReceiver(BodySharing.VESSEL_SCREEN_ID, (minecraftClient, clientPacketListener, buffer, packetSender) -> {
+			// isReplacing
+			boolean isReplacing = buffer.readBoolean();
+			// x, y, w, h
+			int x = buffer.readInt();
+			int y = buffer.readInt();
+			int w = buffer.readInt();
+			int h = buffer.readInt();
+			// pixels
+			int[] pixels = buffer.readVarIntArray();
+			
+			// reconstruct NativeImage
+			NativeImage update = NativeImageHandler.fromPixelArray(w, h, pixels);
+			BodySharing.LOGGER.info("screen update (%d, %d, %d, %d)".formatted(x, y, w, h));
+			synchronized (copycatScreenSync) {
+				// GUI has closed, clear vesselScreen
+				if (update == null) {
+					if (vesselScreen != null)
+						vesselScreen.close();
+					vesselScreen = null;
+					if (resizedScreen != null)
+						resizedScreen.close(); //TODO make sure this gets rid of the flicker and doesn't crash
+					resizedScreen = null;
+					return;
+				}
+				
+				if (isReplacing || (vesselScreen == null && x == 0 && y == 0)) {
+					if (vesselScreen != null)
+						vesselScreen.close();
+					vesselScreen = update;
+				} else if (vesselScreen == null) {
+					// we've been sent an update but don't have a base--ignore it to avoid errors or broken screens
+					return;
+				} else {
+					// update existing screen
+					update.copyRect(vesselScreen, 0, 0, x, y, w, h, false, false);
+					update.close();
+				}
+				Window window = minecraftClient.getWindow();
+				if (resizedScreen == null) {
+					resizedScreen = new NativeImage(window.getWidth(), window.getHeight(), false);
+				} else if (BodySharingClient.resizedScreen.getWidth() != window.getWidth()
+					|| BodySharingClient.resizedScreen.getHeight() != window.getHeight()) {
+					BodySharingClient.resizedScreen.close();
+					BodySharingClient.resizedScreen = new NativeImage(window.getWidth(), window.getHeight(), false);
+				}
+				vesselScreen.resizeSubRectTo(0, 0, vesselScreen.getWidth(), vesselScreen.getHeight(), resizedScreen);
+			}
+		});
+	}
+	
+	public static boolean isGUIOpen() {
+		Minecraft client = Minecraft.getInstance();
+		Player player = client.player;
+		return player.containerMenu != player.inventoryMenu
+			|| client.screen instanceof AbstractContainerScreen
+			|| client.screen instanceof BookViewScreen
+			|| client.screen instanceof AbstractSignEditScreen
+			|| client.screen instanceof AbstractCommandBlockEditScreen
+			|| client.screen instanceof JigsawBlockEditScreen
+			|| client.screen instanceof StructureBlockEditScreen
+			|| client.screen instanceof ChatScreen
+			|| client.screen instanceof DeathScreen;
 	}
 	
 	// Send packet to server to request to stop being a possessor
@@ -362,7 +451,11 @@ public class BodySharingClient implements ClientModInitializer {
 	// Try to re-render the currently-opened GUI; update client fields on success
 	public static boolean renderGUI() {
 		Minecraft minecraftClient = Minecraft.getInstance();
+		// Failsafe
 		if (minecraftClient.screen == null)
+			return false;
+		// Cancel if no GUI open
+		if (!isGUIOpen())
 			return false;
 		
 		// change render target
@@ -401,6 +494,8 @@ public class BodySharingClient implements ClientModInitializer {
 		mrt.bindWrite(Minecraft.ON_OSX);
 		// screenshot
 		NativeImage screenshot = TransparentScreenshot.takeScreenshot(guiTarget);
+		if (BodySharingClient.guiFrameLast != null)
+			BodySharingClient.guiFrameLast.close();
 		BodySharingClient.guiFrameLast = BodySharingClient.guiFrame;
 		BodySharingClient.guiFrame = screenshot;
 		return true;

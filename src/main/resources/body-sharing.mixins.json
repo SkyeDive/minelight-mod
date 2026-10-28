@@ -3,7 +3,6 @@
 	"package": "net.ferret.mixin",
 	"compatibilityLevel": "JAVA_17",
 	"mixins": [
-		"GuiCopyMixin",
 		"SaveInventoryMixin"
 	],
 	"injectors": {
