@@ -3,6 +3,7 @@ package net.ferret;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -257,6 +258,17 @@ public class BodySharing implements ModInitializer {
 			);
 		});
 		
+		ServerPlayConnectionEvents.DISCONNECT.register((sgpli, minecraftServer) -> {
+			UUID disconnector = sgpli.player.getUUID();
+			if (isPossessing(disconnector)) {
+				updatePossessing(minecraftServer, disconnector, true, disconnector, false, true);
+			} else if (isHosting(disconnector)) {
+				for (UUID possessor : getPossessors(disconnector)) {
+					updatePossessing(minecraftServer, possessor, true, possessor, true, false);
+				}
+			}
+		});
+		
 		// server receives packet POSSESSING_UPDATE
 		// see if client is trying to start or stop hosting, update values accordingly, respond accordingly if needed
 		// doesn't send a response if the field "end" is true
@@ -486,6 +498,10 @@ public class BodySharing implements ModInitializer {
 	
 	// common code for updating possession status
 	public static boolean updatePossessing(MinecraftServer minecraftServer, UUID aspirant, boolean end, UUID vessel) {
+		return updatePossessing(minecraftServer, aspirant, end, vessel, true, true);
+	}
+	
+	public static boolean updatePossessing(MinecraftServer minecraftServer, UUID aspirant, boolean end, UUID vessel, boolean notifySender, boolean notifyVessel) {
 		if (minecraftServer.isRunning()) {
 			boolean aspirantIsPossessing = isPossessing(aspirant);
 			ServerPlayer sendingPlayer = minecraftServer.getPlayerList().getPlayer(aspirant);
@@ -501,10 +517,12 @@ public class BodySharing implements ModInitializer {
 								// Remove empty list
 								SERVER_POSSESSION_RECORD.remove(iterVessel);
 								// Inform the vessel that they are no longer hosting
-								FriendlyByteBuf vesselUpdatePacket = PacketByteBufs.create();
-								vesselUpdatePacket.writeBoolean(false);
-								// server sends packet VESSEL_UPDATE (stop hosting)
-								ServerPlayNetworking.send(minecraftServer.getPlayerList().getPlayer(iterVessel), VESSEL_UPDATE_ID, vesselUpdatePacket);
+								if (notifyVessel) {
+									FriendlyByteBuf vesselUpdatePacket = PacketByteBufs.create();
+									vesselUpdatePacket.writeBoolean(false);
+									// server sends packet VESSEL_UPDATE (stop hosting)
+									ServerPlayNetworking.send(minecraftServer.getPlayerList().getPlayer(iterVessel), VESSEL_UPDATE_ID, vesselUpdatePacket);
+								}
 							}
 							broken = true;
 							break;
@@ -515,10 +533,12 @@ public class BodySharing implements ModInitializer {
 				}
 				
 				// Send failsafe possession update to exiting spirit
-				FriendlyByteBuf spiritUpdatePacket = PacketByteBufs.create();
-				spiritUpdatePacket.writeBoolean(true);
-				spiritUpdatePacket.writeUUID(aspirant);
-				ServerPlayNetworking.send(minecraftServer.getPlayerList().getPlayer(aspirant), POSSESSING_UPDATE_ID, spiritUpdatePacket);
+				if (notifySender) {
+					FriendlyByteBuf spiritUpdatePacket = PacketByteBufs.create();
+					spiritUpdatePacket.writeBoolean(true);
+					spiritUpdatePacket.writeUUID(aspirant);
+					ServerPlayNetworking.send(minecraftServer.getPlayerList().getPlayer(aspirant), POSSESSING_UPDATE_ID, spiritUpdatePacket);
+				}
 				
 				// load possessor's inventory
 				if (hasOldInventory(aspirant)) {
@@ -549,10 +569,12 @@ public class BodySharing implements ModInitializer {
 					
 					// notify vessel
 					ServerPlayer vesselPlayer = minecraftServer.getPlayerList().getPlayer(vessel);
-					FriendlyByteBuf vesselUpdatePacket = PacketByteBufs.create();
-					vesselUpdatePacket.writeBoolean(true);
-					// server sends packet VESSEL_UPDATE (start or continue hosting)
-					ServerPlayNetworking.send(vesselPlayer, VESSEL_UPDATE_ID, vesselUpdatePacket);
+					if (notifyVessel) {
+						FriendlyByteBuf vesselUpdatePacket = PacketByteBufs.create();
+						vesselUpdatePacket.writeBoolean(true);
+						// server sends packet VESSEL_UPDATE (start or continue hosting)
+						ServerPlayNetworking.send(vesselPlayer, VESSEL_UPDATE_ID, vesselUpdatePacket);
+					}
 					sendingPlayer.setGameMode(GameType.SPECTATOR);
 					sendingPlayer.setCamera(vesselPlayer);
 					
@@ -564,7 +586,8 @@ public class BodySharing implements ModInitializer {
 					// save possessor's inventory
 					setOldInventory(aspirant, sendingPlayer.getInventory().save(new ListTag()));
 				}
-				ServerPlayNetworking.send(sendingPlayer, POSSESSING_UPDATE_ID, spiritUpdatePacket);
+				if (notifySender)
+					ServerPlayNetworking.send(sendingPlayer, POSSESSING_UPDATE_ID, spiritUpdatePacket);
 				
 				// state of success
 				return !isInvalid;

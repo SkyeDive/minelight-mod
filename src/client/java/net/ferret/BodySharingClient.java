@@ -1,7 +1,5 @@
 package net.ferret;
 
-import java.awt.Graphics;
-import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,6 +25,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.ferret.mixin.client.KeyboardHandlerAccess;
@@ -56,10 +55,6 @@ public class BodySharingClient implements ClientModInitializer {
 	public static boolean isPossessing = false;
 	public static @Nullable UUID possessing = null;
 	public static boolean isHosting = false;
-	public static int streamWidth = 848;
-	public static int streamHeight = 480;
-	public static BufferedImage renderBMP = new BufferedImage(streamWidth, streamHeight, BufferedImage.TYPE_3BYTE_BGR);
-	public static Graphics rbGraphics = renderBMP.createGraphics();
 	public static KeyMapping stopPossession = new KeyMapping("key.minelight.stop_possess", com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM, com.mojang.blaze3d.platform.InputConstants.KEY_F12, KeyMapping.CATEGORY_MULTIPLAYER);
 	public static KeyMapping getGUI = new KeyMapping("key.minelight.get_gui", com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM, com.mojang.blaze3d.platform.InputConstants.UNKNOWN.getValue(), KeyMapping.CATEGORY_INVENTORY);
 	public static ArrayList<KeyMapping> guiKeys = new ArrayList<>();
@@ -418,6 +413,33 @@ public class BodySharingClient implements ClientModInitializer {
 				vesselScreen.resizeSubRectTo(0, 0, vesselScreen.getWidth(), vesselScreen.getHeight(), resizedScreen);
 			}
 		});
+		
+		ClientPlayConnectionEvents.DISCONNECT.register((cpl, minecraft) -> {
+			// Clean up possession fields
+			isPossessing = false;
+			possessing = null;
+			selfUpdatedKeys.clear();
+			synchronized (copycatScreenSync) {
+				if (vesselScreen != null)
+					vesselScreen.close();
+				vesselScreen = null;
+				if (resizedScreen != null)
+					resizedScreen.close();
+				resizedScreen = null;
+			}
+			// Clean up hosting fields
+			isHosting = false;
+			synchronized (guiFrameSync) {
+				if (guiFrameLast != null)
+					guiFrameLast.close();
+				guiFrameLast = null;
+				if (guiFrame != null)
+					guiFrame.close();
+				guiFrame = null;
+			}
+			sendFullScreen = false;
+			possessorKeys.clear();
+		});
 	}
 	
 	public static boolean serverRunning() {
@@ -554,83 +576,4 @@ public class BodySharingClient implements ClientModInitializer {
 		NativeImage screenshot = TransparentScreenshot.takeScreenshot(guiTarget);
 		return screenshot;
 	}
-	
-	// Old code for image format conversion--unused but kept as a PoC in case it's needed again
-	
-	/*
-	// Convert to big-endian
-	public static byte[] keep_3b(int num) {
-		byte[] out = new byte[3];
-		out[0] = (byte)((num >> 16) & 0xFF);
-		out[1] = (byte)((num >> 8) & 0xFF);
-		out[2] = (byte)(num & 0xFF);
-		return out;
-	}
-	// Convert to little-endian
-	public static byte[] inv_4b(int num) {
-		byte[] out = new byte[4];
-		out[0] = (byte)(num & 0xFF);
-		out[1] = (byte)((num >> 8) & 0xFF);
-		out[2] = (byte)((num >> 16) & 0xFF);
-		out[3] = (byte)((num >> 24) & 0xFF);
-		return out;
-	}
-	
-	// Convert Minecraft's screenshot format into Windows BMP
-	public static byte[] screenshotToBitmap(int[] screen, int width) {
-		final int bpc = 8;
-		final int channels = 3;
-		final int bpp = bpc * channels;
-		final int height = screen.length / width;
-		// Cancel if screenshot isn't rectangular
-		if ((float)height != (float)screen.length / width)
-			return null;
-		// en.wikipedia.org/wiki/BMP_file_format#Pixel_storage
-		final int rowSize = net.minecraft.util.Mth.ceil((float)bpp * width / 32) * 4;
-		final int rowEndPad = rowSize - channels * width;
-		final int pixelArraySize = rowSize * height;
-		
-		// Start at byte 54--14 byte BMP header + 40 byte DIB header
-		final int bmpHeaderSize = 14;
-		final int dibHeaderSize = 40;
-		final int pixelArrayStart = bmpHeaderSize + dibHeaderSize;
-		final int sizeInBytes = pixelArrayStart + pixelArraySize;
-		ByteArrayOutputStream bmp = new ByteArrayOutputStream(sizeInBytes);
-		
-		// Set up BMP header
-		bmp.write('B'); bmp.write('M'); // literally the only non-OS/2 option
-		bmp.writeBytes(inv_4b(sizeInBytes)); // self explanatory
-		bmp.write(0); bmp.write(0); // pointless field
-		bmp.write(0); bmp.write(0); // pointless field
-		bmp.writeBytes(inv_4b(pixelArrayStart)); // technically always 0x36 00 00 00
-		
-		// Set up DIB header - Windows BITMAPINFOHEADER
-		bmp.writeBytes(inv_4b(dibHeaderSize)); // technically always 0x28 00 00 00
-		bmp.writeBytes(inv_4b(width));
-		bmp.writeBytes(inv_4b(-height)); // negative = top-to-bottom
-		bmp.write(1); bmp.write(0); // "must be 1"
-		bmp.write(bpp); bmp.write(0);
-		bmp.writeBytes(inv_4b(0)); // BI_RGB
-		bmp.writeBytes(inv_4b(0)); // this can be 0 because we used BI_RGB
-		bmp.writeBytes(inv_4b(1)); // this stretch doesn't matter
-		bmp.writeBytes(inv_4b(1));
-		bmp.writeBytes(inv_4b(0));
-		bmp.writeBytes(inv_4b(0));
-		
-		// Translate format
-		
-		for (int y = 0; y < height; y++) {
-			// Write a row
-			for (int x = 0; x < width; x++) {
-				// This data is AABBGGRR, so it's 1-to-1 with the 24bpp (bi_rgb) wbmp format
-				bmp.writeBytes(keep_3b(screen[y * width + x]));
-			}
-			// Pad with bytes afterwards if needed
-			for (int i = 0; i < rowEndPad; i++)
-				bmp.write(0);
-		}
-		
-		return bmp.toByteArray();
-	}
-	*/
 }

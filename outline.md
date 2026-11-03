@@ -14,7 +14,7 @@ Outline of future plans
   4. ✅ Add event bouncers for GUI data
   5. ✅ Create mixin for receiving and rendering GUI data
   6. ✅ Create mixin for extracting and sending GUI data each tick
-* Add handling for players disconnecting
+* ✅ Add handling for players disconnecting
   * Harden methods against stale UUIDs, in case of poor code execution order
 * Sync hotbar HUD info between clients for HUD rendering
 * Store gamemode and HUD data of possessors alongside inventory
