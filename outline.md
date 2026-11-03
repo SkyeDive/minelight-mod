@@ -20,7 +20,7 @@ Outline of future plans
 * Store gamemode and HUD data of possessors alongside inventory
 * ✅ Rescale mouse positions in possession events to be screen percentage-based
   * ✅ Rescale screens
-* Ensure features still work for LAN-hosting players
+* ✅ Ensure features still work for LAN-hosting players
 
 ## Polish
 * Add commands to allow changing possessor/vessel status of other players
