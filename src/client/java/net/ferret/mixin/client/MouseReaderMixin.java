@@ -26,7 +26,7 @@ public abstract class MouseReaderMixin {
 	// Possessor mouse movement
 	@Inject(method = "onMove", at = @At("HEAD"), cancellable = true)
 	public void interceptOnMove(long window, double d, double e, CallbackInfo ci) {
-		if (BodySharingClient.isPossessing && minecraft.isRunning() && minecraft.getCurrentServer() != null) {
+		if (BodySharingClient.isPossessing && minecraft.isRunning() && BodySharingClient.serverRunning()) {
 			Window w = Minecraft.getInstance().getWindow();
 			FriendlyByteBuf packet = PacketByteBufs.create();
 			packet.writeDouble(d / w.getWidth());
@@ -39,7 +39,7 @@ public abstract class MouseReaderMixin {
 	// Possessor mouse click
 	@Inject(method = "onPress", at = @At("HEAD"), cancellable = true)
 	public void interceptOnPress(long window, int i, int j, int k, CallbackInfo ci) {
-		if (BodySharingClient.isPossessing && minecraft.isRunning() && minecraft.getCurrentServer() != null) {
+		if (BodySharingClient.isPossessing && minecraft.isRunning() && BodySharingClient.serverRunning()) {
 			FriendlyByteBuf packet = PacketByteBufs.create();
 			packet.writeInt(i);
 			packet.writeInt(j);
@@ -52,7 +52,7 @@ public abstract class MouseReaderMixin {
 	// Possessor mouse scrolling
 	@Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
 	public void interceptOnScroll(long window, double d, double e, CallbackInfo ci) {
-		if (BodySharingClient.isPossessing && minecraft.isRunning() && minecraft.getCurrentServer() != null) {
+		if (BodySharingClient.isPossessing && minecraft.isRunning() && BodySharingClient.serverRunning()) {
 			FriendlyByteBuf packet = PacketByteBufs.create();
 			packet.writeDouble(d);
 			packet.writeDouble(e);

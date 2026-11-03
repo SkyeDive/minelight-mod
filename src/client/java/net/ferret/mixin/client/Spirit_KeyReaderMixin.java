@@ -45,7 +45,7 @@ public abstract class Spirit_KeyReaderMixin {
 			BodySharingClient.selfKeyRecord.put(keysym, newVal);
 			if (!BodySharingClient.selfUpdatedKeys.contains(keysym) && newVal != oldVal)
 				BodySharingClient.selfUpdatedKeys.add(keysym);
-			if (minecraft.isRunning() && minecraft.getCurrentServer() != null) {
+			if (minecraft.isRunning() && BodySharingClient.serverRunning()) {
 				FriendlyByteBuf packet = PacketByteBufs.create();
 				packet.writeInt(keysym);
 				packet.writeInt(scancode);
@@ -60,7 +60,7 @@ public abstract class Spirit_KeyReaderMixin {
 	// Capture characters typed by possessor
 	@Inject(method = "charTyped", at = @At("HEAD"), cancellable = true)
 	public void interceptCharTyped(long window, int codepoint, int mods, CallbackInfo ci) {
-		if (BodySharingClient.isPossessing && minecraft.isRunning() && minecraft.getCurrentServer() != null) {
+		if (BodySharingClient.isPossessing && minecraft.isRunning() && BodySharingClient.serverRunning()) {
 			FriendlyByteBuf packet = PacketByteBufs.create();
 			packet.writeInt(codepoint);
 			packet.writeInt(mods);

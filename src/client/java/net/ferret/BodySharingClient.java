@@ -40,6 +40,7 @@ import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.gui.screens.inventory.AbstractCommandBlockEditScreen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.AbstractSignEditScreen;
+import net.minecraft.client.gui.screens.inventory.BookEditScreen;
 import net.minecraft.client.gui.screens.inventory.BookViewScreen;
 import net.minecraft.client.gui.screens.inventory.JigsawBlockEditScreen;
 import net.minecraft.client.gui.screens.inventory.StructureBlockEditScreen;
@@ -113,7 +114,7 @@ public class BodySharingClient implements ClientModInitializer {
 			// Debug hotkey for testing GUI code
 			if (getGUI.consumeClick()) {}
 			
-			if (minecraftClient.isRunning() && (minecraftClient.getCurrentServer() != null || minecraftClient.hasSingleplayerServer())) {
+			if (minecraftClient.isRunning() && serverRunning()) {
 				// Hotkey to stop possessing
 				if (stopPossession.consumeClick()) {
 					if (isPossessing) {
@@ -419,11 +420,17 @@ public class BodySharingClient implements ClientModInitializer {
 		});
 	}
 	
+	public static boolean serverRunning() {
+		Minecraft client = Minecraft.getInstance();
+		return client.getCurrentServer() != null || client.hasSingleplayerServer();
+	}
+	
 	public static boolean isGUIOpen() {
 		Minecraft client = Minecraft.getInstance();
 		Player player = client.player;
 		return player.containerMenu != player.inventoryMenu
 			|| client.screen instanceof AbstractContainerScreen
+			|| client.screen instanceof BookEditScreen
 			|| client.screen instanceof BookViewScreen
 			|| client.screen instanceof AbstractSignEditScreen
 			|| client.screen instanceof AbstractCommandBlockEditScreen
