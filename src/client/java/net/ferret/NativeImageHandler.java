@@ -108,7 +108,7 @@ public class NativeImageHandler {
 			}
 			
 			// return only what has changed
-			return new Bounds(startX, startY, endX - startX, endY - startY);
+			return new Bounds(startX, startY, endX - startX + 1, endY - startY + 1);
 		}
 		// no pixels changed, return no change
 		return null;

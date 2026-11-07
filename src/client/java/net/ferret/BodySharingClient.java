@@ -2,7 +2,9 @@ package net.ferret;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.UUID;
 
 import org.jetbrains.annotations.Nullable;
@@ -19,6 +21,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
@@ -43,10 +46,13 @@ import net.minecraft.client.gui.screens.inventory.BookEditScreen;
 import net.minecraft.client.gui.screens.inventory.BookViewScreen;
 import net.minecraft.client.gui.screens.inventory.JigsawBlockEditScreen;
 import net.minecraft.client.gui.screens.inventory.StructureBlockEditScreen;
+import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 
 public class BodySharingClient implements ClientModInitializer {
 	public static HashMap<Integer, Boolean> possessorKeys = new HashMap<>();
@@ -69,6 +75,7 @@ public class BodySharingClient implements ClientModInitializer {
 	public static final Object copycatScreenSync = new Object();
 	public static @Nullable NativeImage vesselScreen = null; // in original size from vessel
 	public static @Nullable NativeImage resizedScreen = null; // stretched to possessor's screen size
+	public static ArrayList<ItemStack> vesselHotbar;
 	
 	public void onInitializeClient() {
 		// This entrypoint is suitable for setting up client-specific logic, such as rendering.
@@ -79,6 +86,8 @@ public class BodySharingClient implements ClientModInitializer {
 				mc.getMainRenderTarget().width,
 				mc.getMainRenderTarget().height,
 				true, Minecraft.ON_OSX);
+			
+			clearVesselHotbar();
 		});
 		
 		// Possessor copycat GUI
@@ -101,13 +110,33 @@ public class BodySharingClient implements ClientModInitializer {
 						return 0;
 					}))
 				)
+				.then(ClientCommandManager.literal("player")
+					.then(ClientCommandManager.argument("playerName", StringArgumentType.string())
+					.executes(context -> {
+						String playerName = context.getArgument("playerName", String.class);
+						List<AbstractClientPlayer> acps = context.getSource().getWorld().players();
+						for (AbstractClientPlayer acp : acps) {
+							String acpName = acp.getName().getString();
+							//BodySharing.LOGGER.info("acp \"%s\" vs cmd \"%s\""
+							//	.formatted(acpName, playerName));
+							//BodySharing.LOGGER.info("acp (%d) vs cmd (%d)"
+							//	.formatted(acpName.length(), playerName.length()));
+							if (acpName.equals(playerName)) {
+								BodySharing.LOGGER.info(acp.getInventory().items.toString());
+							}
+						}
+						return 0;
+					}))
+				)
 			);
 		});
 		
 		// run every tick, clientside
 		ClientTickEvents.START_CLIENT_TICK.register((minecraftClient) -> {
 			// Debug hotkey for testing GUI code
-			if (getGUI.consumeClick()) {}
+			if (getGUI.consumeClick()) {
+				BodySharing.LOGGER.info("hideGui: %s".formatted((Boolean)minecraftClient.options.hideGui));
+			}
 			
 			if (minecraftClient.isRunning() && serverRunning()) {
 				// Hotkey to stop possessing
@@ -199,6 +228,12 @@ public class BodySharingClient implements ClientModInitializer {
 								resizedScreen.close();
 							resizedScreen = null;
 						}
+					}
+					
+					// Update clientside hotbar
+					Inventory inventory = minecraftClient.player.getInventory();
+					for (int hotbarInd = 0; hotbarInd < 9; hotbarInd++) {
+						inventory.setItem(hotbarInd, vesselHotbar.get(hotbarInd));
 					}
 					
 					FriendlyByteBuf packet = PacketByteBufs.create();
@@ -301,8 +336,10 @@ public class BodySharingClient implements ClientModInitializer {
 			boolean end = buffer.readBoolean();
 			UUID vessel = buffer.readUUID();
 			if (!end) {
-				if (!isPossessing)
+				if (!isPossessing) {
 					BodySharing.LOGGER.info("Beginning possessing");
+					clearVesselHotbar();
+				}
 				possessing = vessel;
 
 				synchronized (copycatScreenSync) {
@@ -414,6 +451,14 @@ public class BodySharingClient implements ClientModInitializer {
 			}
 		});
 		
+		ClientPlayNetworking.registerGlobalReceiver(BodySharing.VESSEL_HOTBAR_ID, (minecraftClient, clientPacketListener, buffer, packetSender) -> {
+			if (vesselHotbar == null)
+				return;
+			for (int hotbarInd = 0; hotbarInd < 9; hotbarInd++) {
+				vesselHotbar.set(hotbarInd, buffer.readItem());
+			}
+		});
+		
 		ClientPlayConnectionEvents.DISCONNECT.register((cpl, minecraft) -> {
 			// Clean up possession fields
 			isPossessing = false;
@@ -460,6 +505,14 @@ public class BodySharingClient implements ClientModInitializer {
 			|| client.screen instanceof StructureBlockEditScreen
 			|| client.screen instanceof ChatScreen
 			|| client.screen instanceof DeathScreen;
+	}
+	
+	public static void clearVesselHotbar() {
+		if (vesselHotbar == null)
+			vesselHotbar = new ArrayList<>();
+		for (int hotbarInd = 0; hotbarInd < 9; hotbarInd++) {
+			vesselHotbar.add(ItemStack.EMPTY);
+		}
 	}
 	
 	// Send packet to server to request to stop being a possessor

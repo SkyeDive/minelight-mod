@@ -14,6 +14,7 @@ Outline of future plans
   4. ✅ Add event bouncers for GUI data
   5. ✅ Create mixin for receiving and rendering GUI data
   6. ✅ Create mixin for extracting and sending GUI data each tick
+  7. Ensure GUI updates apply consistently
 * ✅ Add handling for players disconnecting
   * Harden methods against stale UUIDs, in case of poor code execution order
 * Sync hotbar HUD info between clients for HUD rendering
@@ -27,7 +28,7 @@ Outline of future plans
 * Add more debug commands for maintenance
 * Remove the generic testing command
 * Render and animate held items for possessors
-* Fix GUI updates leaving edges behind
+* ✅ Fix GUI updates leaving edges behind
 
 ## Nice-to-have
 * Move hardcoded command feedback to lang files

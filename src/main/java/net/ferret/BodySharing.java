@@ -2,6 +2,7 @@ package net.ferret;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -16,7 +17,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.players.PlayerList;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.MenuType;
@@ -88,6 +91,8 @@ public class BodySharing implements ModInitializer {
     		// SERVER SENDER	TBD
 			// SERVER RECEIVED	TBD
     public static final ResourceLocation VESSEL_SCREEN_ID = new ResourceLocation(MOD_ID, "vessel_screen");
+    
+    public static final ResourceLocation VESSEL_HOTBAR_ID = new ResourceLocation(MOD_ID, "vessel_hotbar");
     
     public static final ResourceLocation KEY_PRESS_ID = new ResourceLocation(MOD_ID, "key_press");
     
@@ -256,6 +261,26 @@ public class BodySharing implements ModInitializer {
 					return 0;
 				}))
 			);
+		});
+		
+		ServerTickEvents.START_SERVER_TICK.register((minecraftServer) -> {
+			PlayerList pl = minecraftServer.getPlayerList();
+			for (UUID playerUUID : getAllHosts()) {
+				ServerPlayer player = pl.getPlayer(playerUUID);
+				if (player == null)
+					continue;
+				for (UUID possessorUUID : getPossessors(playerUUID)) {
+					ServerPlayer possessor = pl.getPlayer(possessorUUID);
+					if (possessor == null)
+						continue;
+					Inventory inventory = possessor.getInventory();
+					FriendlyByteBuf buffer = PacketByteBufs.create();
+					for (int hotbarInd = 0; hotbarInd < 9; hotbarInd++) {
+						buffer.writeItem(inventory.getItem(hotbarInd));
+					}
+					ServerPlayNetworking.send(possessor, VESSEL_HOTBAR_ID, buffer);
+				}
+			}
 		});
 		
 		ServerPlayConnectionEvents.DISCONNECT.register((sgpli, minecraftServer) -> {
@@ -475,7 +500,7 @@ public class BodySharing implements ModInitializer {
 	
 	// get vessel of this player
 	public static UUID getVessel(UUID possessor) {
-		for (UUID vessel : SERVER_POSSESSION_RECORD.keySet()) {
+		for (UUID vessel : getAllHosts()) {
 			for (UUID spirit : SERVER_POSSESSION_RECORD.getOrDefault(vessel, new ArrayList<UUID>())) {
 				if (spirit == possessor)
 					return vessel;
@@ -486,7 +511,8 @@ public class BodySharing implements ModInitializer {
 	
 	// is player a vessel
 	public static boolean isHosting(UUID player) {
-		return SERVER_POSSESSION_RECORD.containsKey(player) && SERVER_POSSESSION_RECORD.get(player).size() != 0;
+		List<UUID> possessors = SERVER_POSSESSION_RECORD.get(player);
+		return possessors != null && possessors.size() != 0;
 	}
 	
 	// get List of possessors of this player
@@ -494,6 +520,11 @@ public class BodySharing implements ModInitializer {
 		if (isHosting(vessel))
 			return SERVER_POSSESSION_RECORD.get(vessel);
 		return new ArrayList<UUID>();
+	}
+	
+	// get a static iterable of the UUIDs of all players being possessed
+	public static List<UUID> getAllHosts() {
+		return List.copyOf(SERVER_POSSESSION_RECORD.keySet());
 	}
 	
 	// common code for updating possession status
@@ -507,6 +538,8 @@ public class BodySharing implements ModInitializer {
 			ServerPlayer sendingPlayer = minecraftServer.getPlayerList().getPlayer(aspirant);
 			// If ceasing possession
 			if (end) {
+				// Outside-loop index removal
+				UUID removeInd = null;
 				for (UUID iterVessel : SERVER_POSSESSION_RECORD.keySet()) {
 					boolean broken = false;
 					for (UUID iterSpirit : SERVER_POSSESSION_RECORD.getOrDefault(iterVessel, new ArrayList<UUID>())) {
@@ -514,8 +547,8 @@ public class BodySharing implements ModInitializer {
 							SERVER_POSSESSION_RECORD.get(iterVessel).remove(aspirant);
 							// If this spirit was the final one possessing the vessel
 							if (SERVER_POSSESSION_RECORD.get(iterVessel).size() == 0) {
-								// Remove empty list
-								SERVER_POSSESSION_RECORD.remove(iterVessel);
+								// Remove empty list later
+								removeInd = iterVessel;
 								// Inform the vessel that they are no longer hosting
 								if (notifyVessel) {
 									FriendlyByteBuf vesselUpdatePacket = PacketByteBufs.create();
@@ -531,6 +564,8 @@ public class BodySharing implements ModInitializer {
 					if (broken)
 						break;
 				}
+				if (removeInd != null)
+					SERVER_POSSESSION_RECORD.remove(removeInd);
 				
 				// Send failsafe possession update to exiting spirit
 				if (notifySender) {
