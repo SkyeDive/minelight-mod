@@ -123,11 +123,15 @@ public class NativeImageHandler {
 	 */
 	public static @Nullable NativeImage crop(NativeImage image, Bounds bounds) {
 		// don't try to crop invalid images
-		if (!isImageValid(image))
+		if (!isImageValid(image)) {
+			BodySharing.LOGGER.debug("Image isn't valid!");
 			return null;
+		}
 		// don't try to crop with invalid bounds
-		if (!areBoundsValid(image, bounds))
+		if (!areBoundsValid(image, bounds)) {
+			BodySharing.LOGGER.debug("Bounds aren't valid!");
 			return null;
+		}
 		// shortcut if the bounds don't change anything
 		if (bounds.x == 0 && bounds.y == 0 && bounds.w == image.getWidth() && bounds.h == image.getHeight())
 			return image;
@@ -172,7 +176,7 @@ public class NativeImageHandler {
 		if (bounds == null)
 			return false;
 		
-		return posInside(image, bounds.x, bounds.y) && posInside(image, bounds.x + bounds.w, bounds.y + bounds.h);
+		return posInside(image, bounds.x, bounds.y) && posInside(image, bounds.x + bounds.w - 1, bounds.y + bounds.h - 1);
 	}
 	
 	private static boolean posInside(NativeImage image, int x, int y) {

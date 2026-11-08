@@ -2,7 +2,6 @@ package net.ferret;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
@@ -94,7 +93,7 @@ public class BodySharingClient implements ClientModInitializer {
 		MenuScreens.register(BodySharing.VESSEL_SCREEN_MENU, VesselScreen::new);
 		
 		// Keybinds
-		KeyBindingHelper.registerKeyBinding(stopPossession);
+		guiKeys.add(KeyBindingHelper.registerKeyBinding(stopPossession));
 		guiKeys.add(KeyBindingHelper.registerKeyBinding(getGUI));
 		
 		// Debug clientside command for field manipulation
@@ -510,6 +509,8 @@ public class BodySharingClient implements ClientModInitializer {
 	public static void clearVesselHotbar() {
 		if (vesselHotbar == null)
 			vesselHotbar = new ArrayList<>();
+		else
+			vesselHotbar.clear();
 		for (int hotbarInd = 0; hotbarInd < 9; hotbarInd++) {
 			vesselHotbar.add(ItemStack.EMPTY);
 		}

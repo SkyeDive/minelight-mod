@@ -575,6 +575,9 @@ public class BodySharing implements ModInitializer {
 					ServerPlayNetworking.send(minecraftServer.getPlayerList().getPlayer(aspirant), POSSESSING_UPDATE_ID, spiritUpdatePacket);
 				}
 				
+				// close copycat GUI
+				sendingPlayer.closeContainer();
+				
 				// load possessor's inventory
 				if (hasOldInventory(aspirant)) {
 					ListTag inv = getOldInventory(aspirant);
